@@ -1,0 +1,25 @@
+# dependencies
+node_modules/
+
+# backups & editor junk
+*.bak
+*.bak-*
+*~
+*.swp
+.DS_Store
+Thumbs.db
+
+# logs & env
+*.log
+.env
+.env.*
+!.env.example
+
+# build output
+dist/
+build/
+*.tsbuildinfo
+
+# OS / IDE
+.idea/
+.vscode/

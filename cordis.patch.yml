@@ -1,0 +1,8 @@
+# dsh bundle layer: mount the F12 inspector plugin (dsh/index.js via the
+# package root export). The client (client/client.js) registers the element
+# inspector into the details slot (the right "third column") plus a sidebar
+# footer action that opens that column. Host API:
+#   POST /api/f12-inspector  { op: list|read|write, path, content }
+- insert:
+    - id: f12-inspector
+      name: 'dsh-f12-inspector'

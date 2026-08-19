@@ -1,0 +1,54 @@
+{
+  "name": "dsh-f12-inspector",
+  "version": "1.1.0",
+  "description": "DSH（DeepSeek Harness）网页界面元素检查插件：文件树选页、F12 式元素定位（XPath / CSS 选择器 / 计算样式）、内置 HTML 编辑器，可复制或加入对话发给 AI。",
+  "type": "module",
+  "main": "./dsh/index.js",
+  "exports": {
+    ".": "./dsh/index.js",
+    "./client": "./client/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dsh",
+    "client",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE",
+    "docs"
+  ],
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "f12",
+    "devtools",
+    "inspector",
+    "element",
+    "selector",
+    "xpath",
+    "filetree",
+    "editor",
+    "检查元素",
+    "f12检查器",
+    "元素定位",
+    "plugin"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {},
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "slots",
+        "layout"
+      ]
+    }
+  }
+}
