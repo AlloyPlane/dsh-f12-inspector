@@ -1,5 +1,11 @@
 # 🔍 dsh-f12-inspector
 
+<div align="center">
+
+**[简体中文](README.md)** · [**English**](README.en.md)
+
+</div>
+
 > 一个用于 **DSH（DeepSeek Harness）** Web 前端的元素检查插件：把浏览器「F12 检查元素」的交互搬进网页界面的**第三栏（右侧详情栏）**，并内置工作区文件树和 HTML 编辑器。
 
 在 DSH Web 界面里浏览工作区、点选 HTML 页面载入预览，开启「检查模式」后**悬停高亮、点击定位**，一键拿到元素的 **CSS 选择器 / XPath / 计算样式 / outerHTML**，还能**直接改源码、刷新预览继续检查**，并把元素上下文「＋加入对话」发给 AI 让它修改。
@@ -48,10 +54,10 @@ POST /api/f12-inspector
 > 标准 DSH bundle 插件，一条命令即可安装（发布到 GitHub 后）：
 
 ```sh
-dsh plugin --profile web add "github:AlloyPlane/dsh-f12-inspector#494a1d3&path:/"
+dsh plugin --profile web add "github:AlloyPlane/dsh-f12-inspector#v1.1.0&path:/"
 ```
 
-> `494a1d3` 为当前发布提交号（见仓库主页，换用最新提交号亦可）。包根 = 仓库根。
+> `v1.1.0` 为当前发布标签（换用最新提交号亦可）。包根 = 仓库根。
 
 或**本地目录**（包目录内执行）：
 
