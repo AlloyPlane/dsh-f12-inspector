@@ -48,10 +48,10 @@ POST /api/f12-inspector
 > 标准 DSH bundle 插件，一条命令即可安装（发布到 GitHub 后）：
 
 ```sh
-dsh plugin --profile web add "github:AlloyPlane/dsh-f12-inspector#<commit>&path:/"
+dsh plugin --profile web add "github:AlloyPlane/dsh-f12-inspector#494a1d3&path:/"
 ```
 
-> `<commit>` 换成仓库最新提交号（见仓库主页）。包根 = 仓库根。
+> `494a1d3` 为当前发布提交号（见仓库主页，换用最新提交号亦可）。包根 = 仓库根。
 
 或**本地目录**（包目录内执行）：
 
