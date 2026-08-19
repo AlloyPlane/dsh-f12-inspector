@@ -86,6 +86,10 @@ cd dsh-f12-inspector && dsh plugin --profile web add .
 - 所有文件读写都通过 DSH 的 `fs` 服务进行（不是裸 `node:fs`），遵循 DSH 的沙箱与权限体系；路径按 `fs.resolve` 规则解析（工作区根为相对路径基准）。
 - 这仍是**本地开发工具**：`/api/f12-inspector` 暴露在工作区上。**请不要把该插件部署到公网 / 不受信任的网络环境**。
 
+## 🧡 致谢 / 设计参考
+
+- 工作区文件树与内置编辑器的**设计思路**参考自 [lak321/dsh-filetree](https://github.com/lak321/dsh-filetree)（MIT 协议）。相关归属声明见 [ACKNOWLEDGEMENTS.md](./ACKNOWLEDGEMENTS.md)。
+
 ## 📄 License
 
 [MIT](./LICENSE) © AlloyPlane
