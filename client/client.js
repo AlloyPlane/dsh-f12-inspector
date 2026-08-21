@@ -334,6 +334,8 @@ window.__ModuleLoader__.load({ id: "dsh-f12-inspector", factory: (require) => {
 
     const [url, setUrl] = react.useState("");
     const [mode, setMode] = react.useState("off"); // off | edit (inspect mode)
+    const modeRef = react.useRef("off");
+    modeRef.current = mode;
     const [sel, setSel] = react.useState(null);
     const [logs, setLogs] = react.useState([]);
     const [toast, setToast] = react.useState("");
@@ -347,6 +349,10 @@ window.__ModuleLoader__.load({ id: "dsh-f12-inspector", factory: (require) => {
     const dirPathRef = react.useRef("");
     const hoverTag = react.useRef(null);
     const selTag = react.useRef(null);
+    const hoverBox = react.useRef(null);
+    const selBox = react.useRef(null);
+    const hoverEl = react.useRef(null);
+    const selEl = react.useRef(null);
     const clickLog = react.useRef([]);
     const lastClickRef = react.useRef("");
     const [diag, setDiag] = react.useState("");
@@ -430,6 +436,9 @@ window.__ModuleLoader__.load({ id: "dsh-f12-inspector", factory: (require) => {
       setSel(null);
       if (selTag.current) { selTag.current.remove(); selTag.current = null; }
       if (hoverTag.current) { hoverTag.current.remove(); hoverTag.current = null; }
+      if (selBox.current) { selBox.current.remove(); selBox.current = null; }
+      if (hoverBox.current) { hoverBox.current.remove(); hoverBox.current = null; }
+      selEl.current = null; hoverEl.current = null;
       clearDocHighlights();
     };
 
@@ -459,21 +468,54 @@ window.__ModuleLoader__.load({ id: "dsh-f12-inspector", factory: (require) => {
       if (bg === '#1f6feb') hoverTag.current = tag; else selTag.current = tag;
     }
 
+    // Parent-side frame ("框框") helpers — guaranteed visible regardless of
+    // the preview document's own CSS.
+    function makeBox(border, bg) {
+      const box = document.createElement('div');
+      Object.assign(box.style, {
+        position: 'absolute', zIndex: 9998, pointerEvents: 'none',
+        boxSizing: 'border-box', border: '2px solid ' + border, background: bg,
+        display: 'none',
+      });
+      return box;
+    }
+    function placeBox(box, el) {
+      const wrap = iframeRef.current && iframeRef.current.parentElement;
+      if (!wrap || !el) return;
+      const r = el.getBoundingClientRect();
+      const w = wrap.getBoundingClientRect();
+      box.style.display = 'block';
+      box.style.left = (r.left - w.left) + 'px';
+      box.style.top = (r.top - w.top) + 'px';
+      box.style.width = r.width + 'px';
+      box.style.height = r.height + 'px';
+    }
+    function onScroll() {
+      if (hoverBox.current && hoverEl.current) placeBox(hoverBox.current, hoverEl.current);
+      if (selBox.current && selEl.current) placeBox(selBox.current, selEl.current);
+    }
+
     // Listeners bound to the preview document.
     function onMouseOver(e) {
-      if (mode !== 'edit') return;
+      if (modeRef.current !== 'edit') return;
       const t = e.target && e.target.closest ? e.target.closest('body *') : null;
       const curDoc = docRef.current;
       if (!t || !curDoc || t === curDoc.body || t === curDoc.documentElement) return;
       clearDocHighlights();
       t.classList.add('f12-inspect-hover');
+      const wrap = iframeRef.current && iframeRef.current.parentElement;
+      if (wrap && !hoverBox.current) { hoverBox.current = makeBox('#1f6feb', 'rgba(31,111,235,.10)'); wrap.appendChild(hoverBox.current); }
+      hoverEl.current = t;
+      if (hoverBox.current) placeBox(hoverBox.current, t);
       showTag(t, describeEl(t), '#1f6feb', '#fff');
       pushLog('iframe→host', 'inspect:hover', describeEl(t));
     }
     function onMouseOut() {
-      if (mode !== 'edit') return;
+      if (modeRef.current !== 'edit') return;
       clearDocHighlights();
       if (hoverTag.current) { hoverTag.current.remove(); hoverTag.current = null; }
+      if (hoverBox.current) { hoverBox.current.style.display = 'none'; }
+      hoverEl.current = null;
     }
     function onClick(e) {
       // 点击即选中：不依赖检查模式开关（mode 只管悬停高亮）
@@ -502,6 +544,11 @@ window.__ModuleLoader__.load({ id: "dsh-f12-inspector", factory: (require) => {
         };
       }
       setSel(payload);
+      if (hoverBox.current) hoverBox.current.style.display = 'none';
+      const wrap = iframeRef.current && iframeRef.current.parentElement;
+      if (wrap && !selBox.current) { selBox.current = makeBox('#d29922', 'rgba(210,153,34,.12)'); wrap.appendChild(selBox.current); }
+      selEl.current = t;
+      if (selBox.current) placeBox(selBox.current, t);
       showTag(t, describeEl(t), '#d29922', '#0d1117');
       pushLog('iframe→host', 'inspect:select', payload.tagName + ' · ' + (payload.selector || ''));
     }
@@ -521,6 +568,7 @@ window.__ModuleLoader__.load({ id: "dsh-f12-inspector", factory: (require) => {
       d.addEventListener('click', onClick);
       d.addEventListener('keydown', onKeyDown, true);
       d.addEventListener('keydown', onKeyDown);
+      d.addEventListener('scroll', onScroll, true);
     }
     function detachInspect() {
       if (!doc) return;
@@ -533,6 +581,7 @@ window.__ModuleLoader__.load({ id: "dsh-f12-inspector", factory: (require) => {
         doc.removeEventListener('click', onClick);
         doc.removeEventListener('keydown', onKeyDown, true);
         doc.removeEventListener('keydown', onKeyDown);
+        doc.removeEventListener('scroll', onScroll, true);
       } catch { /* detached */ }
       docRef.current = null;
       setDoc(null);
