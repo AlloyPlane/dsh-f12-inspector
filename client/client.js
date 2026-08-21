@@ -150,6 +150,13 @@ window.__ModuleLoader__.load({ id: "dsh-f12-inspector", factory: (require) => {
     ".f12-diag{padding:3px 10px;color:#58a6ff;font-size:10.5px;font-family:Consolas,Menlo,monospace;border-bottom:1px dashed rgba(45,51,59,.6)}",
     ".f12-preview{flex:1;min-height:0;position:relative;background:#0d1117;display:flex}",
     ".f12-iframe{flex:1;width:100%;height:100%;border:none;background:#fff}",
+    ".f12-toolbtn{min-width:26px;height:26px;padding:0 7px;font-size:13px;font-weight:400;color:#24292f;background:transparent;border:none;border-radius:5px;cursor:pointer;line-height:1;font-family:-apple-system,'Segoe UI',system-ui,sans-serif}",
+    ".f12-toolbtn:hover{background:#f0f0f0}",
+    ".f12-toolbtn:active{background:#e0e0e0}",
+    ".f12-toolsel{font-size:12px;color:#24292f;background:#fff;border:1px solid #e1e4e8;border-radius:5px;height:26px;padding:0 4px;cursor:pointer;outline:none}",
+    ".f12-toolbtn-ai{min-width:26px;height:26px;padding:0 9px;font-size:13px;font-weight:600;color:#1f6feb;background:transparent;border:none;border-radius:5px;cursor:pointer;line-height:1;font-family:-apple-system,'Segoe UI',system-ui,sans-serif}",
+    ".f12-toolbtn-ai:hover{background:#eaf2ff}",
+    ".f12-inline-edit{outline:2px solid #1f6feb;outline-offset:1px;border-radius:2px;min-height:1em;cursor:text}",
     ".f12-empty{margin:auto;color:#8b949e;font-size:12px;text-align:center;padding:20px;line-height:1.8}",
     ".f12-info{border-top:1px solid #2d333b;padding:8px 10px;max-height:42%;overflow:auto;font-size:11.5px;font-family:Consolas,Menlo,monospace}",
     ".f12-info-label{color:#8b949e;font-size:11px;margin-bottom:4px}",
@@ -194,6 +201,17 @@ window.__ModuleLoader__.load({ id: "dsh-f12-inspector", factory: (require) => {
     ".f12-prod-div{color:#484f58}",
     ".f12-prod-preview{border-color:#1f6feb;color:#58a6ff}",
     ".f12-prod-preview:hover{background:rgba(31,111,235,.15)}",
+    // selection action bar + AI component-modify dialog
+    ".f12-selbar{display:flex;align-items:center;gap:6px;padding:8px 10px;border-top:1px solid #2d333b;border-bottom:1px solid #2d333b;flex-wrap:wrap;background:#161b22}",
+    ".f12-selbar-tag{font-family:monospace;font-size:11px;color:#d29922;max-width:42%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
+    ".f12-ai{border:1px solid #1f6feb;background:#161b22;border-radius:10px;margin:8px 10px;padding:10px;box-shadow:0 8px 24px rgba(0,0,0,.4)}",
+    ".f12-ai-hd{display:flex;align-items:center;font-weight:700;font-size:13px;margin-bottom:8px}",
+    ".f12-ai-target{font-family:monospace;font-size:11px;color:#8b949e;background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:6px 8px;margin-bottom:8px;word-break:break-all}",
+    ".f12-ai-outer{max-height:70px;overflow:auto;color:#8b949e;margin-top:4px;white-space:pre-wrap}",
+    ".f12-ai-ta{width:100%;height:72px;resize:vertical;background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:8px;font-size:12px;font-family:inherit;outline:none}",
+    ".f12-ai-ta:focus{border-color:#1f6feb}",
+    ".f12-ai-actions{display:flex;align-items:center;gap:8px;margin-top:8px}",
+    ".f12-ai-hint{color:#8b949e;font-size:11px;flex:1}",
   ].join("");
   const tagId = "dsh-f12-inspector/styles";
   if (typeof document !== "undefined" && !document.querySelector("style[data-plugin-css=\"" + tagId + "\"]")) {
@@ -372,6 +390,11 @@ window.__ModuleLoader__.load({ id: "dsh-f12-inspector", factory: (require) => {
     const [loadTarget, setLoadTarget] = react.useState("");
     const [dirFiles, setDirFiles] = react.useState(null);
     const dirPathRef = react.useRef("");
+    const [textEditing, setTextEditing] = react.useState(false);
+    const [inlineEditing, setInlineEditing] = react.useState(false);
+    const [floatBar, setFloatBar] = react.useState(null);   // {x, y, hasSel} 选中文本工具栏
+    const inlineElRef = react.useRef(null);
+    const floatBarRef = react.useRef(null);
     const hoverTag = react.useRef(null);
     const selTag = react.useRef(null);
     const hoverBox = react.useRef(null);
@@ -403,6 +426,12 @@ window.__ModuleLoader__.load({ id: "dsh-f12-inspector", factory: (require) => {
     const [cursor, setCursor] = react.useState({ line: 1, col: 1 });
     // source of the currently loaded page (for edit/refresh)
     const srcRef = react.useRef({ path: "", content: "" });
+
+    // AI component-modify dialog state (select element -> DSH edits ONLY it)
+    const [aiOpen, setAiOpen] = react.useState(false);
+    const [aiText, setAiText] = react.useState("");
+    const [aiBusy, setAiBusy] = react.useState(false); // waiting for DSH edit -> auto refresh
+    const aiTimerRef = react.useRef(null);
 
     const pushLog = (dir, type, brief) => {
       setLogs(prev => [{ dir, type, brief, ts: Date.now() }, ...prev].slice(0, 50));
@@ -459,6 +488,8 @@ window.__ModuleLoader__.load({ id: "dsh-f12-inspector", factory: (require) => {
 
     const clearAll = () => {
       setSel(null);
+      setStyleEdit(null);
+      setTextEditing(false);
       if (selTag.current) { selTag.current.remove(); selTag.current = null; }
       if (hoverTag.current) { hoverTag.current.remove(); hoverTag.current = null; }
       if (selBox.current) { selBox.current.remove(); selBox.current = null; }
@@ -550,6 +581,20 @@ window.__ModuleLoader__.load({ id: "dsh-f12-inspector", factory: (require) => {
       const t = e.target && e.target.closest ? e.target.closest('body *') : null;
       const curDoc = docRef.current;
       if (!t || !curDoc || t === curDoc.body || t === curDoc.documentElement) { clearAll(); return; }
+      // 就地编辑中点击其他元素 → 先完成编辑
+      if (inlineEditing && inlineElRef.current && inlineElRef.current !== t) {
+        commitInlineEdit();
+      }
+      // 用户刚拖选了一段文字（selection 非空）→ 不干扰选择，让浮动工具栏出现
+      let hasSelection = false;
+      try {
+        const sel = curDoc.getSelection();
+        hasSelection = sel && !sel.isCollapsed && sel.toString().trim().length > 0;
+      } catch { /* ignore */ }
+      if (hasSelection) {
+        onSelectionChange();
+        return;
+      }
       e.preventDefault(); e.stopPropagation();
       clearDocHighlights();
       t.classList.add('f12-inspect-selected');
@@ -569,12 +614,22 @@ window.__ModuleLoader__.load({ id: "dsh-f12-inspector", factory: (require) => {
         };
       }
       setSel(payload);
+      // 选中即浮现：自动展开信息面板
+      setShowInfo(true);
       if (hoverBox.current) hoverBox.current.style.display = 'none';
       const wrap = iframeRef.current && iframeRef.current.parentElement;
       if (wrap && !selBox.current) { selBox.current = makeBox('#d29922', 'rgba(210,153,34,.12)'); wrap.appendChild(selBox.current); }
       selEl.current = t;
       if (selBox.current) placeBox(selBox.current, t);
       showTag(t, describeEl(t), '#d29922', '#0d1117');
+      // 单击文字元素 → 自动进入就地编辑（点进去就能打字，Word/PPT 体验）
+      const tag = t.tagName;
+      const textLike = /^(P|H1|H2|H3|H4|H5|H6|SPAN|DIV|A|LI|TD|TH|LABEL|STRONG|EM|B|I|U|SMALL|BLOCKQUOTE|PRE|CODE)$/i.test(tag);
+      const hasDirectText = Array.from(t.childNodes).some(n => n.nodeType === 3 && (n.textContent || '').trim().length > 0);
+      if (textLike && hasDirectText && !inlineEditing) {
+        enterInlineEdit(t);
+        setToast("✏️ 正在就地编辑：直接打字/删字，点空白处或 Esc 完成");
+      }
       pushLog('iframe→host', 'inspect:select', payload.tagName + ' · ' + (payload.selector || ''));
     }
     function onKeyDown(e) {
@@ -591,8 +646,14 @@ window.__ModuleLoader__.load({ id: "dsh-f12-inspector", factory: (require) => {
       d.addEventListener('mouseout', onMouseOut);
       d.addEventListener('click', onClick, true);
       d.addEventListener('click', onClick);
+      d.addEventListener('dblclick', onDblClick, true);
+      d.addEventListener('dblclick', onDblClick);
       d.addEventListener('keydown', onKeyDown, true);
       d.addEventListener('keydown', onKeyDown);
+      d.addEventListener('keyup', (e) => { onSelectionChange(); if (e.key === 'Escape' && inlineEditing) commitInlineEdit(); }, true);
+      d.addEventListener('keyup', (e) => { onSelectionChange(); if (e.key === 'Escape' && inlineEditing) commitInlineEdit(); });
+      d.addEventListener('mouseup', onSelectionChange, true);
+      d.addEventListener('mouseup', onSelectionChange);
       d.addEventListener('scroll', onScroll, true);
     }
     function detachInspect() {
@@ -637,11 +698,28 @@ window.__ModuleLoader__.load({ id: "dsh-f12-inspector", factory: (require) => {
       }
     }
 
+    // 把 file:///D:/... 这类本地地址转成 D:/... 路径（也兼容 /D:/... 形式）
+    function normalizeLocalPath(p) {
+      let s = p.trim();
+      // file:///D:/x  ->  D:/x
+      if (/^file:\/\//i.test(s)) {
+        s = s.replace(/^file:\/\//i, '');
+        // Windows 盘符前可能残留一个前导斜杠：/D:/x -> D:/x
+        if (/^\/[a-zA-Z]:/.test(s)) s = s.slice(1);
+        // 路径里的反斜杠统一为正斜杠
+        s = s.replace(/\\/g, '/');
+        return s;
+      }
+      // 纯 Windows 路径 D:\x 或 D:/x → 保留（host 已支持）
+      return s;
+    }
+
     async function loadFile() {
-      const p = url.trim();
-      if (!p) { setError("请先输入路径（工作区相对 / 绝对）或网址"); return; }
+      const raw = url.trim();
+      if (!raw) { setError("请先输入路径（工作区相对 / 绝对 / file:// 地址）或网址"); return; }
       setError("");
-      if (/^https?:\/\//i.test(p)) { loadUrl(); return; }
+      if (/^https?:\/\//i.test(raw)) { loadUrl(); return; }
+      const p = normalizeLocalPath(raw);
       // 先按目录尝试：能列出条目 → 快速点选
       const listing = await api("list", p);
       if (listing && listing.ok && Array.isArray(listing.entries)) {
@@ -789,6 +867,402 @@ window.__ModuleLoader__.load({ id: "dsh-f12-inspector", factory: (require) => {
       if (!filled) copyText(text);
     }
 
+    /* ============ 第一梯队：截图+代码发对话 / 复制完整信息 / 改样式 / 改文字 ============ */
+
+    // 复制完整信息（outerHTML + selector + xpath + 计算样式）
+    function copyFullInfo() {
+      if (!sel) return;
+      const el = selEl.current;
+      let stylesText = '';
+      if (el) {
+        try {
+          const cs = getComputedStyle(el);
+          const keys = ['display','position','width','height','margin','padding','color','background-color','font-size','font-weight','border','border-radius','box-shadow','gap'];
+          stylesText = keys.map(k => '  ' + k + ': ' + cs.getPropertyValue(k)).join('\n');
+        } catch { /* ignore */ }
+      }
+      const info = "[F12 元素完整信息]\n"
+        + "标签: " + sel.tagName + "\n"
+        + "CSS 选择器: " + sel.selector + "\n"
+        + "XPath: " + sel.xpath + "\n"
+        + (sel.domId ? "data-dom-id: " + sel.domId + "\n" : "")
+        + "文本: " + (sel.textContent || "(空)") + "\n"
+        + "尺寸: " + sel.rect.width + "×" + sel.rect.height + " @ (" + sel.rect.left + "," + sel.rect.top + ")\n"
+        + (stylesText ? "计算样式:\n" + stylesText + "\n" : "")
+        + "HTML: " + (sel.outerHtml || "");
+      copyText(info);
+      setToast("✅ 已复制完整信息（含计算样式）");
+      pushLog('iframe→host', 'inspect:copy-full', sel.selector);
+    }
+
+    // 截取选中元素截图（canvas 裁剪 iframe 区域）
+    function captureElementScreenshot() {
+      const ifr = iframeRef.current;
+      const el = selEl.current;
+      if (!ifr || !el) return null;
+      try {
+        const rect = el.getBoundingClientRect();
+        if (rect.width < 2 || rect.height < 2) { setToast("⚠ 元素太小无法截图"); return null; }
+        const hadSel = el.classList.contains('f12-inspect-selected');
+        if (hadSel) el.classList.remove('f12-inspect-selected');
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(rect.width);
+        canvas.height = Math.round(rect.height);
+        const ctx2 = canvas.getContext('2d');
+        ctx2.drawImage(ifr, rect.left, rect.top, rect.width, rect.height, 0, 0, canvas.width, canvas.height);
+        if (hadSel) el.classList.add('f12-inspect-selected');
+        return canvas.toDataURL('image/png');
+      } catch (err) {
+        setToast("⚠ 截图失败: " + String((err && err.message) || err).slice(0, 60));
+        return null;
+      }
+    }
+
+    function dataURLtoBlob(dataUrl) {
+      const arr = dataUrl.split(',');
+      const mime = arr[0].match(/:(.*?);/)[1];
+      const bstr = atob(arr[1]);
+      const n = bstr.length;
+      const u8arr = new Uint8Array(n);
+      for (let i = 0; i < n; i++) u8arr[i] = bstr.charCodeAt(i);
+      return new Blob([u8arr], { type: mime });
+    }
+
+    // 截图 + 代码 一起加入对话（多模态）
+    function addToChatWithScreenshot() {
+      if (!sel) return;
+      const text = "[F12 选中元素] 请帮我修改这个页面元素：\n"
+        + "- 标签: " + sel.tagName + "\n"
+        + "- CSS 选择器: " + sel.selector + "\n"
+        + "- XPath: " + sel.xpath + "\n"
+        + (sel.domId ? "- data-dom-id: " + sel.domId + "\n" : "")
+        + (sel.textContent ? "- 文本: " + sel.textContent.substring(0, 50) + "\n" : "")
+        + "- 尺寸: " + sel.rect.width + "×" + sel.rect.height + " @ (" + sel.rect.left + "," + sel.rect.top + ")\n"
+        + "随附该元素的截图，请结合截图帮我修改。";
+      let got = 0;
+      try {
+        const inputActions = props.inputActions;
+        const input = props.input;
+        if (inputActions && typeof inputActions.setDraft === 'function') {
+          const current = input && typeof input.draft === 'string' ? input.draft : "";
+          inputActions.setDraft(current.trim() ? current + "\n" + text : text);
+          got++;
+        }
+      } catch { /* draft not available */ }
+      try {
+        const dataUrl = captureElementScreenshot();
+        if (dataUrl && props.conversation && props.inputActions) {
+          const blob = dataURLtoBlob(dataUrl);
+          const file = new File([blob], 'f12-element.png', { type: 'image/png' });
+          const atts = props.conversation.createDraftImages([file]);
+          if (atts && atts.length && typeof props.inputActions.addImages === 'function') {
+            props.inputActions.addImages(atts.map(a => a.id));
+            got++;
+          }
+        }
+      } catch { /* screenshot attach failed */ }
+      pushLog('iframe→host', 'inspect:add-to-chat-img', sel.selector + (got > 1 ? ' + 截图' : ''));
+      setToast(got > 1 ? "✅ 元素代码+截图已加入对话，发送给我即可" : (got === 1 ? "✅ 代码已加入对话（截图附加失败）" : "已复制元素信息"));
+      if (got === 0) copyText(text);
+    }
+
+    // 直接改文字
+    function startTextEdit() {
+      const el = selEl.current;
+      if (!el) return;
+      setTextEditing(true);
+      setToast("✏️ 输入新文字，按回车确认，Esc 取消");
+      pushLog('host→iframe', 'inspect:text-edit', sel.selector);
+    }
+
+    function commitTextEdit() {
+      const el = selEl.current;
+      if (!el || !textEditing) return;
+      const input = document.getElementById('f12-text-input');
+      if (input && input.value.trim() !== '') {
+        el.textContent = input.value;
+        setSel(prev => prev ? { ...prev, textContent: input.value } : prev);
+        setToast("✅ 文字已修改（仅预览）");
+        pushLog('host→iframe', 'inspect:text-commit', input.value.slice(0, 30));
+      }
+      setTextEditing(false);
+    }
+
+    /* ============ 就地实时编辑（Word/PPT 风格） ============
+       双击文字元素 → contenteditable 就地打字删字（所见即所得）
+       在预览里选中一段文字 → 浮动工具栏（加粗/颜色/字号）即时生效
+    */
+
+    // 进入就地编辑（单击文字 / 双击 都走这里）
+    function enterInlineEdit(t) {
+      const curDoc = docRef.current;
+      if (!t || !curDoc) return;
+      // 只对文本容器就地编辑（避免把整个页面变成可编辑）
+      const tag = t.tagName;
+      const editable = !/^(HTML|BODY|SCRIPT|STYLE|IFRAME|FORM|INPUT|TEXTAREA|SELECT|BUTTON)$/i.test(tag);
+      if (!editable) { toast1("⚠ 这个元素不适合就地编辑"); return; }
+      // 记录原始内容，进入编辑
+      inlineElRef.current = t;
+      t.classList.add('f12-inline-edit');
+      t.contentEditable = 'true';
+      t.focus();
+      setInlineEditing(true);
+      setFloatBar(null);
+      // 把光标放到点击处
+      try {
+        const r = document.createRange();
+        const sel = curDoc.getSelection();
+        r.selectNodeContents(t);
+        r.collapse(false);
+        sel.removeAllRanges();
+        sel.addRange(r);
+      } catch { /* ignore */ }
+      pushLog('host→iframe', 'inspect:inline-edit', t.tagName);
+    }
+
+    // 双击进入就地编辑（兼容保留）
+    function onDblClick(e) {
+      const t = e.target && e.target.closest ? e.target.closest('body *') : null;
+      const curDoc = docRef.current;
+      if (!t || !curDoc || t === curDoc.body || t === curDoc.documentElement) return;
+      e.preventDefault(); e.stopPropagation();
+      enterInlineEdit(t);
+    }
+
+    function toast1(msg) { setToast(msg); }
+
+    // 完成就地编辑
+    function commitInlineEdit() {
+      const el = inlineElRef.current;
+      if (!el) return;
+      try { el.contentEditable = 'false'; } catch { /* ignore */ }
+      el.classList.remove('f12-inline-edit');
+      const newText = (el.textContent || '').trim();
+      setSel(prev => prev ? { ...prev, textContent: newText } : prev);
+      inlineElRef.current = null;
+      setInlineEditing(false);
+      pushLog('host→iframe', 'inspect:inline-commit', newText.slice(0, 30));
+    }
+
+    // 选中文本时显示浮动工具栏（Word/PPT 风格）
+    function onSelectionChange() {
+      const curDoc = docRef.current;
+      if (!curDoc) return;
+      const sel = curDoc.getSelection();
+      if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
+        // 无选区 → 隐藏工具栏（除非正在就地编辑）
+        if (!inlineEditing) setFloatBar(null);
+        return;
+      }
+      // 选区在 iframe 内
+      const range = sel.getRangeAt(0);
+      const container = range.commonAncestorContainer;
+      if (!curDoc.contains(container)) { setFloatBar(null); return; }
+      // 计算工具栏位置（选区上方）
+      const rect = range.getBoundingClientRect();
+      const wrap = iframeRef.current && iframeRef.current.parentElement;
+      const wrapRect = wrap ? wrap.getBoundingClientRect() : { left: 0, top: 0 };
+      setFloatBar({
+        x: Math.max(0, rect.left - wrapRect.left + rect.width / 2 - 70),
+        y: Math.max(0, rect.top - wrapRect.top - 40),
+        hasSel: true,
+      });
+    }
+
+    // 对选中文本应用样式（execCommand 即时生效）
+    function applySelectionStyle(cmd, value) {
+      const curDoc = docRef.current;
+      if (!curDoc) return;
+      try {
+        curDoc.execCommand('styleWithCSS', false, 'true');
+        if (cmd === 'foreColor' || cmd === 'backColor' || cmd === 'fontSize' || cmd === 'fontName') {
+          curDoc.execCommand(cmd, false, value);
+        } else {
+          curDoc.execCommand(cmd, false, null);
+        }
+        setToast("✅ 已应用到选中文字（仅预览）");
+        pushLog('host→iframe', 'inspect:sel-style', cmd + (value ? '=' + value : ''));
+        // 应用后保持选中，工具栏还在
+        onSelectionChange();
+      } catch (err) {
+        setToast("⚠ 应用失败: " + String((err && err.message) || err).slice(0, 40));
+      }
+    }
+
+    // 清除选中文字的样式（移除所有内联样式）
+    function clearSelectionStyle() {
+      const curDoc = docRef.current;
+      if (!curDoc) return;
+      try {
+        curDoc.execCommand('removeFormat', false, null);
+        setToast("↩️ 已清除选中文字格式");
+        pushLog('host→iframe', 'inspect:sel-clear', '');
+      } catch { /* ignore */ }
+    }
+
+    // 获取当前选区元素的字号（用于 - / + 显示）
+    function getSelectionFontSize() {
+      const curDoc = docRef.current;
+      if (!curDoc) return 16;
+      const sel = curDoc.getSelection();
+      if (!sel || sel.isCollapsed || sel.rangeCount === 0) return 16;
+      try {
+        const range = sel.getRangeAt(0);
+        const node = range.commonAncestorContainer;
+        const el = node.nodeType === 3 ? node.parentElement : node;
+        const fs = el && getComputedStyle(el).fontSize;
+        return fs ? Math.round(parseFloat(fs)) : 16;
+      } catch { return 16; }
+    }
+
+    // 字号 +/-（用 span 包裹选中文字精确设 px）
+    function adjustSelectionFontSize(delta) {
+      const curDoc = docRef.current;
+      if (!curDoc) return;
+      const sel = curDoc.getSelection();
+      if (!sel || sel.isCollapsed || sel.rangeCount === 0) { setToast("⚠ 请先选中文字"); return; }
+      const base = getSelectionFontSize();
+      const next = Math.max(8, Math.min(72, base + delta));
+      try {
+        curDoc.execCommand('styleWithCSS', false, 'true');
+        curDoc.execCommand('fontSize', false, '3'); // 先落一个锚点
+        // 用 span 精确设像素
+        const range = sel.getRangeAt(0);
+        const span = curDoc.createElement('span');
+        span.style.fontSize = next + 'px';
+        try { range.surroundContents(span); }
+        catch { /* 跨元素选区 fallback 已用 fontSize */ }
+        setToast("🔤 字号 → " + next + "px");
+        pushLog('host→iframe', 'inspect:sel-fontsize', next + 'px');
+        onSelectionChange();
+      } catch (err) {
+        setToast("⚠ 字号调整失败");
+      }
+    }
+
+    // 文本对齐（左/中/右）
+    function alignSelection(dir) {
+      const curDoc = docRef.current;
+      if (!curDoc) return;
+      try {
+        const cmd = dir === 'left' ? 'justifyLeft' : dir === 'center' ? 'justifyCenter' : 'justifyRight';
+        curDoc.execCommand(cmd, false, null);
+        setToast("↔ 已" + (dir === 'left' ? '左' : dir === 'center' ? '居中' : '右') + "对齐");
+        pushLog('host→iframe', 'inspect:sel-align', dir);
+        onSelectionChange();
+      } catch (err) {
+        setToast("⚠ 对齐失败");
+      }
+    }
+
+    // 删除选中文字
+    function deleteSelectionText() {
+      const curDoc = docRef.current;
+      if (!curDoc) return;
+      try {
+        curDoc.execCommand('delete', false, null);
+        setToast("🗑 已删除选中文字");
+        pushLog('host→iframe', 'inspect:sel-delete', '');
+        onSelectionChange();
+      } catch { /* ignore */ }
+    }
+
+    // AI 编辑：把选中文字的上下文发到对话（我是 agent，接收你的修改要求后改源文件）
+    function aiEditSelection() {
+      const curDoc = docRef.current;
+      if (!curDoc) return;
+      const sel = curDoc.getSelection();
+      const selectedText = sel && !sel.isCollapsed ? sel.toString().trim() : '';
+      if (!selectedText) { setToast("⚠ 请先选中要修改的文字"); return; }
+      // 找到选区所在元素 → 定位信息
+      let loc = { selector: '', xpath: '' };
+      try {
+        const range = sel.getRangeAt(0);
+        const node = range.commonAncestorContainer;
+        const el = node.nodeType === 3 ? node.parentElement : node;
+        if (el && el.closest) {
+          const target = el.closest('p, h1, h2, h3, h4, h5, h6, span, div, li, td, th, a, strong, em, blockquote, pre, code') || el;
+          loc.selector = getCssSelector(target);
+          loc.xpath = getXPath(target);
+          selEl.current = target;
+        }
+      } catch { /* ignore */ }
+      const text = "[F12 选中文字] 我选中了这段文字：\n"
+        + "「" + selectedText.substring(0, 80) + "」\n"
+        + "- 元素: " + (selEl.current ? selEl.current.tagName : '?') + "\n"
+        + "- CSS 选择器: " + loc.selector + "\n"
+        + "- XPath: " + loc.xpath + "\n"
+        + "你想怎么改？直接告诉我就行（改文字/样式/对齐/删掉…），我会修改源文件。";
+      let filled = false;
+      try {
+        const inputActions = props.inputActions;
+        const input = props.input;
+        if (inputActions && typeof inputActions.setDraft === 'function') {
+          const current = input && typeof input.draft === 'string' ? input.draft : "";
+          inputActions.setDraft(current.trim() ? current + "\n" + text : text);
+          filled = true;
+        }
+      } catch { /* draft not available */ }
+      setToast(filled ? "🤖 已把选中文字发给 AI，请告诉我怎么改" : "已复制（未能自动填入输入框）");
+      pushLog('host→iframe', 'inspect:ai-edit', loc.selector);
+      if (!filled) copyText(text);
+    }
+
+    function stopAiWatch() {
+      if (aiTimerRef.current) { clearInterval(aiTimerRef.current); aiTimerRef.current = null; }
+      setAiBusy(false);
+    }
+
+    function sendAiModify() {
+      if (!sel) return;
+      const instruction = aiText.trim();
+      if (!instruction) { setError("请先输入你想怎么改这个组件"); return; }
+      const src = srcRef.current;
+      const outer = (sel.outerHtml || "").substring(0, 1200);
+      const text = "[F12 AI 修改] 请只针对下面这一个组件进行修改，页面其他任何部分一律不要动：\n"
+        + "- 标签: " + sel.tagName + "\n"
+        + "- CSS 选择器: " + sel.selector + "\n"
+        + "- XPath: " + (sel.xpath || "") + "\n"
+        + "- 当前 outerHTML:\n" + outer + "\n"
+        + "修改要求（用户原话）:\n" + instruction + "\n"
+        + "请只修改这一个组件（它的 HTML / 类名 / 内联样式 / 相关 CSS 规则），改完把改动写回源文件，并简要说明改了哪些文件与内容。";
+      let filled = false;
+      try {
+        const inputActions = props.inputActions;
+        const input = props.input;
+        if (inputActions && typeof inputActions.setDraft === 'function') {
+          const current = input && typeof input.draft === 'string' ? input.draft : "";
+          inputActions.setDraft(current.trim() ? current + "\n" + text : text);
+          filled = true;
+          if (typeof inputActions.submit === 'function') { try { inputActions.submit(); } catch { /* ignore */ } }
+        }
+      } catch { /* draft not available */ }
+      setAiOpen(false);
+      setAiText("");
+      pushLog('host→iframe', 'inspect:ai-modify', sel.selector);
+      if (!filled) { copyText(text); setToast("未能自动发送，已复制指令到剪贴板"); return; }
+      setToast("🤖 已发送给 DSH：只改选中的这个组件，改完自动刷新预览");
+      // watch the loaded source file for edits -> auto reload preview
+      stopAiWatch();
+      if (src.path) {
+        setAiBusy(true);
+        const deadline = Date.now() + 180000;
+        aiTimerRef.current = setInterval(async () => {
+          try {
+            if (srcRef.current.path !== src.path) { stopAiWatch(); return; }
+            const r = await api("read", src.path);
+            if (r && r.ok && typeof r.content === "string" && r.content !== srcRef.current.content) {
+              stopAiWatch();
+              loadHtml(r.content, "文件 " + src.path, src.path);
+              setToast("✅ 源码已更新，预览已自动刷新");
+            } else if (Date.now() > deadline) {
+              stopAiWatch();
+            }
+          } catch { if (Date.now() > deadline) stopAiWatch(); }
+        }, 2000);
+      }
+    }
+
     react.useEffect(() => {
       if (!toast) return;
       const t = setTimeout(() => setToast(""), 2200);
@@ -847,7 +1321,7 @@ window.__ModuleLoader__.load({ id: "dsh-f12-inspector", factory: (require) => {
       react.createElement("div", { className: "f12-urlrow" },
         react.createElement("input", {
           className: "f12-inp", value: url,
-          placeholder: "工作区相对路径 / 绝对路径 / 网址 (如 src/index.html)",
+          placeholder: "路径 / 网址 / file:// 地址 (如 file:///D:/x.html)",
           onChange: (e) => setUrl(e.target.value),
           onKeyDown: (e) => { if (e.key === 'Enter') loadFile(); },
         }),
@@ -927,7 +1401,66 @@ window.__ModuleLoader__.load({ id: "dsh-f12-inspector", factory: (require) => {
                   react.createElement("div", {}, "· 载入后悬停高亮、点击选中元素"),
                   react.createElement("div", { style: { marginTop: 8 } }, loadTarget ? "当前: " + loadTarget : "尚未载入页面"),
                 ),
-            react.createElement("iframe", { ref: iframeRef, className: "f12-iframe", onLoad: onIframeLoad, sandbox: "allow-same-origin allow-scripts allow-forms allow-popups", title: "F12 检查预览" })),
+            react.createElement("iframe", { ref: iframeRef, className: "f12-iframe", onLoad: onIframeLoad, sandbox: "allow-same-origin allow-scripts allow-forms allow-popups", title: "F12 检查预览" }),
+            // 选中文本浮动工具栏（Word/PPT 风格，覆盖在预览上方）
+            floatBar && floatBar.hasSel
+              ? react.createElement("div", { ref: floatBarRef, style: { position: "absolute", left: floatBar.x, top: floatBar.y, zIndex: 99999, display: "flex", alignItems: "center", gap: 2, background: "#fff", border: "1px solid #e1e4e8", borderRadius: 8, padding: "4px", boxShadow: "0 4px 16px rgba(0,0,0,.15)", maxWidth: "calc(100% - 20px)", flexWrap: "wrap" } },
+                  // 字体选择
+                  react.createElement("select", { className: "f12-toolsel", title: "字体", onMouseDown: (e) => e.preventDefault(), onChange: (ev) => { if (ev.target.value) applySelectionStyle('fontName', ev.target.value); } },
+                    react.createElement("option", { value: "" }, "字体"),
+                    react.createElement("option", { value: "sans-serif" }, "无衬线"),
+                    react.createElement("option", { value: "serif" }, "衬线"),
+                    react.createElement("option", { value: "monospace" }, "等宽"),
+                    react.createElement("option", { value: "'Microsoft YaHei', sans-serif" }, "微软雅黑"),
+                    react.createElement("option", { value: "'SimSun', serif" }, "宋体"),
+                  ),
+                  react.createElement("span", { style: { width: 1, background: "#e1e4e8", margin: "0 2px", alignSelf: "stretch" } }),
+                  // 字号 - / 数字 / +
+                  react.createElement("button", { className: "f12-toolbtn", title: "减小字号", onMouseDown: (e) => e.preventDefault(), onClick: () => adjustSelectionFontSize(-2) }, "−"),
+                  react.createElement("span", { style: { fontSize: 13, color: "#24292f", padding: "0 3px", minWidth: 20, textAlign: "center" } }, getSelectionFontSize() + ""),
+                  react.createElement("button", { className: "f12-toolbtn", title: "增大字号", onMouseDown: (e) => e.preventDefault(), onClick: () => adjustSelectionFontSize(2) }, "+"),
+                  react.createElement("span", { style: { width: 1, background: "#e1e4e8", margin: "0 2px", alignSelf: "stretch" } }),
+                  // 加粗
+                  react.createElement("button", { className: "f12-toolbtn", style: { fontWeight: 700 }, title: "加粗", onMouseDown: (e) => e.preventDefault(), onClick: () => applySelectionStyle('bold') }, "B"),
+                  // 对齐下拉
+                  react.createElement("select", { className: "f12-toolsel", title: "对齐", onMouseDown: (e) => e.preventDefault(), onChange: (ev) => { if (ev.target.value) alignSelection(ev.target.value); } },
+                    react.createElement("option", { value: "" }, "≡"),
+                    react.createElement("option", { value: "left" }, "左对齐"),
+                    react.createElement("option", { value: "center" }, "居中对齐"),
+                    react.createElement("option", { value: "right" }, "右对齐"),
+                  ),
+                  react.createElement("span", { style: { width: 1, background: "#e1e4e8", margin: "0 2px", alignSelf: "stretch" } }),
+                  // 删除选中文字
+                  react.createElement("button", { className: "f12-toolbtn", title: "删除选中文字", onMouseDown: (e) => e.preventDefault(), onClick: () => deleteSelectionText() }, "🗑"),
+                  // AI 编辑
+                  react.createElement("button", { className: "f12-toolbtn-ai", title: "把选中文字发给 AI 修改", onMouseDown: (e) => e.preventDefault(), onClick: () => aiEditSelection() }, "✦ AI 编辑"),
+                )
+              : null,
+          ),
+
+      // selection action bar (always visible when an element is selected)
+      sel && !editing ? react.createElement("div", { className: "f12-selbar" },
+        react.createElement("span", { className: "f12-selbar-tag" }, "选中: " + (sel.tagName || "?") + " " + (sel.selector || "")),
+        react.createElement("button", { className: "f12-btn f12-btn-primary", onClick: () => { setAiText(""); setAiOpen(true); } }, "🤖 AI 修改"),
+        react.createElement("button", { className: "f12-btn", onClick: copySelector }, "📋 复制选择器"),
+        react.createElement("button", { className: "f12-btn", onClick: addToChat }, "＋ 加入对话"),
+        aiBusy ? react.createElement("span", { className: "f12-ai-hint", style: { marginLeft: "auto", color: "#d29922" } }, "🤖 DSH 修改中… 改完自动刷新预览") : null,
+      ) : null,
+
+      // AI component-modify dialog: ask DSH to change ONLY this element
+      aiOpen && sel ? react.createElement("div", { className: "f12-ai" },
+        react.createElement("div", { className: "f12-ai-hd" },
+          react.createElement("span", null, "🤖 AI 修改组件"),
+          react.createElement("button", { className: "f12-btn", style: { marginLeft: "auto", padding: "1px 8px" }, onClick: () => setAiOpen(false) }, "✕")),
+        react.createElement("div", { className: "f12-ai-target" },
+          react.createElement("div", null, react.createElement("span", { className: "f12-kvk" }, "元素"), "  ", sel.tagName + " " + (sel.selector || "")),
+          react.createElement("div", null, react.createElement("span", { className: "f12-kvk" }, "XPath"), "  ", sel.xpath || ""),
+          react.createElement("div", { className: "f12-ai-outer" }, (sel.outerHtml || "").substring(0, 400))),
+        react.createElement("textarea", { className: "f12-ai-ta", placeholder: "告诉 DSH 你想怎么改这个组件（只改它，页面其他地方不动），例如：\n· 按钮颜色太暗，改成蓝色圆角\n· 卡片间距太挤，标题再大一点\n· 这个区块整体左移、背景改浅灰", value: aiText, onChange: (e) => setAiText(e.target.value) }),
+        react.createElement("div", { className: "f12-ai-actions" },
+          react.createElement("span", { className: "f12-ai-hint" }, "发送给 DSH：只改这一个组件 · 改完自动刷新预览"),
+          react.createElement("button", { className: "f12-btn f12-btn-primary", onClick: sendAiModify }, "发送给 DSH →")),
+      ) : null,
 
       // element info (dev-only, hidden by default; toggle via ℹ️ 信息)
       sel && showInfo && !editing ? react.createElement("div", { className: "f12-info" },
@@ -940,9 +1473,19 @@ window.__ModuleLoader__.load({ id: "dsh-f12-inspector", factory: (require) => {
           react.createElement("div", {}, react.createElement("span", { className: "f12-kvk" }, "text"), "  ", (sel.textContent || "(空)").substring(0, 60)),
           react.createElement("div", {}, react.createElement("span", { className: "f12-kvk" }, "rect"), "  ", sel.rect.width + "×" + sel.rect.height + " @ (" + sel.rect.left + "," + sel.rect.top + ")"),
         ),
-        react.createElement("div", { style: { display: "flex", gap: 6, marginTop: 8 } },
+        react.createElement("div", { style: { display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" } },
+          react.createElement("button", { className: "f12-btn f12-btn-primary", onClick: addToChatWithScreenshot }, "🖼 截图+代码 → 对话"),
+          react.createElement("button", { className: "f12-btn", onClick: copyFullInfo }, "📋 复制完整信息"),
           react.createElement("button", { className: "f12-btn", onClick: copySelector }, "📋 复制选择器"),
           react.createElement("button", { className: "f12-btn", onClick: addToChat }, "＋ 加入对话"),
+        ),
+        // 选中即浮现：文字编辑（直接显示，无需按钮）
+        react.createElement("div", { style: { marginTop: 8 } },
+          react.createElement("div", { className: "f12-info-label" }, "✏️ 改文字（回车确认，Esc 取消）"),
+          react.createElement("div", { style: { display: "flex", gap: 6 } },
+            react.createElement("input", { id: "f12-text-input", style: { flex: 1, padding: "5px 9px", fontSize: 12, color: "#e6edf3", background: "#21262d", border: "1px solid #3d444d", borderRadius: 6, outline: "none" }, defaultValue: (sel.textContent || "").substring(0, 80), onKeyDown: (ev) => { if (ev.key === 'Enter') commitTextEdit(); if (ev.key === 'Escape') setTextEditing(false); }, placeholder: "输入新文字…" }),
+            react.createElement("button", { className: "f12-btn", onClick: commitTextEdit }, "✓ 确认"),
+          ),
         ),
       ) : null,
 
@@ -962,6 +1505,7 @@ window.__ModuleLoader__.load({ id: "dsh-f12-inspector", factory: (require) => {
       react.createElement("div", { className: "f12-status" },
         react.createElement("span", { className: "f12-dot", style: { background: mode === 'edit' ? "#3fb950" : "#8b949e" } }),
         react.createElement("span", {}, mode === 'edit' ? "编辑模式已开启 · 悬停圈选组件" : (sel ? "已选中 1 个元素" : "未选中元素")),
+        aiBusy ? react.createElement("span", { style: { color: "#d29922" } }, "· 🤖 等待 DSH 修改") : null,
         react.createElement("span", { style: { marginLeft: "auto" } }, "dsh-f12-inspector"),
       ),
     );
@@ -1045,6 +1589,10 @@ window.__ModuleLoader__.load({ id: "dsh-f12-inspector", factory: (require) => {
 
     // 2) The inspector itself: details slot at a lower priority than
     //    ui-conversation's DetailsPanel (default 0), so it wins the shadow.
+    //    conversation: createDraftImages(files) lets "截图+代码一起发对话"
+    //    attach the element screenshot as an image in the composer.
+    let conversation = null;
+    try { conversation = ctx.get('conversation'); } catch (e) { /* not ready yet */ }
     ctx.slots.inject("details", () =>
       ctx.slots.register({
         name: "details",
@@ -1052,7 +1600,8 @@ window.__ModuleLoader__.load({ id: "dsh-f12-inspector", factory: (require) => {
         priority: -1,
         locale: NS,
         inject: () => ({ closeDetails: () => { try { layout.closeDetails(); } catch (e) { /* panel may be unavailable */ } } }),
-      }, F12InspectorPanel));
+      }, (props) => react.createElement(F12InspectorPanel, Object.assign({}, props, { conversation }))),
+    );
 
     // 3) Chat turn-tail: when the agent produced files, show them as chips
     //    (same as ui-deliverables) PLUS "🔍 F12" preview buttons for HTML.
