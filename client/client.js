@@ -31,6 +31,23 @@ window.__ModuleLoader__.load({ id: "dsh-f12-inspector", factory: (require) => {
   const HTML_EXT = /\.(html?|xhtml|svg)$/i;
 
   /* ================================================================
+     Cross-component bridge: the chat turn-tail "🔍 F12 预览" action
+     sends a produced file path here; the inspector panel (mounted in
+     the details column) registers a listener to load it into preview.
+     ================================================================ */
+  const panelLoadListeners = new Set();
+  const queuedLoads = [];
+  let openDetailsImpl = null;
+  function requestF12Load(path) {
+    if (panelLoadListeners.size > 0) {
+      panelLoadListeners.forEach((fn) => fn(path));
+      return;
+    }
+    queuedLoads.push(path);
+    if (openDetailsImpl) { try { openDetailsImpl(); } catch (e) { /* ignore */ } }
+  }
+
+  /* ================================================================
      File API via the host route (POST /api/f12-inspector)
      ================================================================ */
   function api(op, path, content) {
@@ -169,6 +186,14 @@ window.__ModuleLoader__.load({ id: "dsh-f12-inspector", factory: (require) => {
     ".f12ed-hl .f12-t{color:#569cd6}.f12ed-hl .f12-a{color:#9cdcfe}.f12ed-hl .f12-s{color:#ce9178}.f12ed-hl .f12-c{color:#6a9955}.f12ed-hl .f12-k{color:#c586c0}",
     // fullscreen overlay (covers the whole browser viewport)
     ".f12-fullscreen{position:fixed;top:0;left:0;right:0;bottom:0;width:100vw;height:100vh;z-index:9999;background:#0d1117}",
+    // chat turn-tail produced files + F12 preview
+    ".f12-prod{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:4px 0;font-size:12px}",
+    ".f12-prod-label{color:#8b949e;font-size:11px;flex-shrink:0}",
+    ".f12-prod-chip{border:1px solid #30363d;background:#161b22;color:#e6edf3;font-size:11.5px;padding:1px 8px;border-radius:10px;cursor:pointer;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
+    ".f12-prod-chip:hover{background:#21262d}",
+    ".f12-prod-div{color:#484f58}",
+    ".f12-prod-preview{border-color:#1f6feb;color:#58a6ff}",
+    ".f12-prod-preview:hover{background:rgba(31,111,235,.15)}",
   ].join("");
   const tagId = "dsh-f12-inspector/styles";
   if (typeof document !== "undefined" && !document.querySelector("style[data-plugin-css=\"" + tagId + "\"]")) {
@@ -772,6 +797,16 @@ window.__ModuleLoader__.load({ id: "dsh-f12-inspector", factory: (require) => {
 
     react.useEffect(() => () => { detachInspect(); }, []);
 
+    // Receive "在 F12 预览" requests from the chat turn-tail action. The
+    // effect runs once; loadFileByPath is hoisted and only touches stable
+    // refs/setters, so the captured first-render closure is safe.
+    react.useEffect(() => {
+      const fn = (p) => { loadFileByPath(p); };
+      panelLoadListeners.add(fn);
+      while (queuedLoads.length) { const p = queuedLoads.shift(); fn(p); }
+      return () => { panelLoadListeners.delete(fn); };
+    }, []);
+
     function copyText(text) {
       try {
         if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -953,10 +988,50 @@ window.__ModuleLoader__.load({ id: "dsh-f12-inspector", factory: (require) => {
   }
 
   /* ================================================================
+     Chat turn-tail: produced files + "🔍 F12 预览" buttons
+     ================================================================ */
+  function producedForClosingLocal(data, seq) {
+    if (!data || !Array.isArray(data.produced)) return [];
+    const seen = new Set(); const out = [];
+    for (const p of data.produced) {
+      if (!p || typeof p.path !== "string") continue;
+      if (typeof seq === "number" && p.seq > seq) continue;
+      if (seen.has(p.path)) continue;
+      seen.add(p.path); out.push(p.path);
+    }
+    return out;
+  }
+  function basenameLocal(p) {
+    const at = Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\"));
+    return at === -1 ? p : p.slice(at + 1);
+  }
+  function ProducedFilesWithF12(props) {
+    const matched = props.matched || [];
+    const openFile = props.openFile;
+    const htmlPaths = matched.filter((p) => HTML_EXT.test(p));
+    return react.createElement("div", { className: "f12-prod" },
+      react.createElement("span", { className: "f12-prod-label" }, "📦 产物"),
+      matched.map((p) => react.createElement("button", {
+        key: p, type: "button", className: "f12-prod-chip", title: "打开 " + p,
+        onClick: () => { if (openFile) { try { openFile(p); } catch (e) { /* ignore */ } } },
+      }, basenameLocal(p))),
+      htmlPaths.length ? react.createElement(react.Fragment, null,
+        react.createElement("span", { className: "f12-prod-div" }, "·"),
+        htmlPaths.map((p) => react.createElement("button", {
+          key: "f12:" + p, type: "button", className: "f12-prod-chip f12-prod-preview",
+          title: "在 F12 插件中预览 " + p,
+          onClick: () => requestF12Load(p),
+        }, "🔍 F12 " + basenameLocal(p))),
+      ) : null,
+    );
+  }
+
+  /* ================================================================
      apply
      ================================================================ */
   function apply(ctx) {
     const layout = ctx.layout;
+    openDetailsImpl = () => { try { layout.openDetails(); } catch (e) { /* panel may be unavailable */ } };
 
     // 1) Sidebar footer action to open the third column.
     ctx.slots.inject("sidebar.footer.action", () =>
@@ -978,6 +1053,21 @@ window.__ModuleLoader__.load({ id: "dsh-f12-inspector", factory: (require) => {
         locale: NS,
         inject: () => ({ closeDetails: () => { try { layout.closeDetails(); } catch (e) { /* panel may be unavailable */ } } }),
       }, F12InspectorPanel));
+
+    // 3) Chat turn-tail: when the agent produced files, show them as chips
+    //    (same as ui-deliverables) PLUS "🔍 F12" preview buttons for HTML.
+    //    priority -1 wins the chain election ahead of ui-deliverables (0).
+    ctx.slots.inject("conversation.chat.turnTail", () =>
+      ctx.slots.register({
+        name: "conversation.chat.turnTail",
+        priority: -1,
+        locale: NS,
+        select: (owner) => {
+          const data = owner && owner.turn && owner.turn.data ? owner.turn.data.get("deliverables") : undefined;
+          const paths = producedForClosingLocal(data, owner && owner.seq);
+          return paths.length ? paths : null;
+        },
+      }, ProducedFilesWithF12));
   }
 
   Object.defineProperty(exports, "name", { value: name });
