@@ -357,6 +357,8 @@ window.__ModuleLoader__.load({ id: "dsh-f12-inspector", factory: (require) => {
     const [treeOpen, setTreeOpen] = react.useState(false);
     // protocol log state (dev-only, hidden by default; toggle in toolbar)
     const [showLog, setShowLog] = react.useState(false);
+    // element-info state (dev-only, hidden by default; toggle in toolbar)
+    const [showInfo, setShowInfo] = react.useState(false);
     const [treeMap, setTreeMap] = react.useState({});
     const [expanded, setExpanded] = react.useState({});
     const [treeBusy, setTreeBusy] = react.useState(false);
@@ -602,6 +604,20 @@ window.__ModuleLoader__.load({ id: "dsh-f12-inspector", factory: (require) => {
       pushLog('host→iframe', 'inspect:request', '导航到 ' + href);
     }
 
+    // Inject the highlight frame CSS into the preview document so the
+    // hovered/selected element gets a visible box ("框框") around it.
+    function injectInspectCss(d) {
+      try {
+        if (!d.getElementById('f12-inspect-style')) {
+          const st = d.createElement('style');
+          st.id = 'f12-inspect-style';
+          st.textContent = '.f12-inspect-hover{outline:2px solid #1f6feb !important;outline-offset:0;background:rgba(31,111,235,.10) !important}'
+            + '.f12-inspect-selected{outline:2px solid #d29922 !important;outline-offset:0;background:rgba(210,153,34,.12) !important}';
+          (d.head || d.documentElement).appendChild(st);
+        }
+      } catch { /* ignore */ }
+    }
+
     function onIframeLoad() {
       setLoaded(true);
       const d = iframeRef.current && iframeRef.current.contentDocument;
@@ -609,6 +625,7 @@ window.__ModuleLoader__.load({ id: "dsh-f12-inspector", factory: (require) => {
       try {
         if (d && d.body) {
           attachInspect(d);
+          injectInspectCss(d);
           inspectable = true;
           const ifr = iframeRef.current;
           setDiag('引擎已就绪 · iframe ' + (ifr ? Math.round(ifr.clientWidth) + 'x' + Math.round(ifr.clientHeight) : '?') + ' · 点击元素即可选中');
@@ -760,10 +777,10 @@ window.__ModuleLoader__.load({ id: "dsh-f12-inspector", factory: (require) => {
           onClick: () => {
             const next = mode === 'edit' ? 'off' : 'edit';
             setMode(next);
-            pushLog(next === 'edit' ? 'host→iframe' : 'iframe→host', 'inspect:state', next === 'edit' ? '检查模式开启' : '检查模式关闭');
+            pushLog(next === 'edit' ? 'host→iframe' : 'iframe→host', 'inspect:state', next === 'edit' ? '编辑模式开启' : '编辑模式关闭');
           },
-          title: "开启后，在预览里悬停/点击元素进行定位",
-        }, "🔍 检查"),
+          title: "开启编辑模式：在预览里悬停/点击元素，用边框圈出要改的组件",
+        }, "🖱 编辑模式"),
         react.createElement("button", {
           className: "f12-btn", disabled: !canEdit,
           onClick: startEditLoaded, title: "编辑当前页面源码（VSCode 风格）",
@@ -776,6 +793,10 @@ window.__ModuleLoader__.load({ id: "dsh-f12-inspector", factory: (require) => {
           className: "f12-btn", onClick: () => setShowLog(!showLog),
           title: "显示/隐藏协议日志（开发者调试用）",
         }, showLog ? "🕮 协议▾" : "🕮 协议▸"),
+        react.createElement("button", {
+          className: "f12-btn", onClick: () => setShowInfo(!showInfo),
+          title: "显示/隐藏定位信息（选择器/XPath/尺寸）",
+        }, showInfo ? "ℹ️ 信息▾" : "ℹ️ 信息▸"),
         react.createElement("span", { className: "f12-label", style: { marginLeft: "auto" } },
           mode === 'edit' ? "开启中 · Esc 取消" : (loaded ? "未开启" : "")),
         react.createElement("button", { className: "f12-btn", onClick: clearAll, title: "清除选择" }, "✕")),
@@ -824,8 +845,8 @@ window.__ModuleLoader__.load({ id: "dsh-f12-inspector", factory: (require) => {
                 ),
             react.createElement("iframe", { ref: iframeRef, className: "f12-iframe", onLoad: onIframeLoad, sandbox: "allow-same-origin allow-scripts allow-forms allow-popups", title: "F12 检查预览" })),
 
-      // element info
-      sel && !editing ? react.createElement("div", { className: "f12-info" },
+      // element info (dev-only, hidden by default; toggle via ℹ️ 信息)
+      sel && showInfo && !editing ? react.createElement("div", { className: "f12-info" },
         react.createElement("div", { className: "f12-info-label" }, "定位信息（inspect payload）"),
         react.createElement("div", { className: "f12-kv" },
           react.createElement("div", {}, react.createElement("span", { className: "f12-kvk" }, "tagName"), "  ", sel.tagName),
@@ -856,7 +877,7 @@ window.__ModuleLoader__.load({ id: "dsh-f12-inspector", factory: (require) => {
       // status
       react.createElement("div", { className: "f12-status" },
         react.createElement("span", { className: "f12-dot", style: { background: mode === 'edit' ? "#3fb950" : "#8b949e" } }),
-        react.createElement("span", {}, mode === 'edit' ? "检查模式已开启" : (sel ? "已选中 1 个元素" : "未选中元素")),
+        react.createElement("span", {}, mode === 'edit' ? "编辑模式已开启 · 悬停圈选组件" : (sel ? "已选中 1 个元素" : "未选中元素")),
         react.createElement("span", { style: { marginLeft: "auto" } }, "dsh-f12-inspector"),
       ),
     );
