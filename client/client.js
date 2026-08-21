@@ -167,6 +167,8 @@ window.__ModuleLoader__.load({ id: "dsh-f12-inspector", factory: (require) => {
     ".f12ed-status span:last-child{margin-left:auto}",
     // highlight colors
     ".f12ed-hl .f12-t{color:#569cd6}.f12ed-hl .f12-a{color:#9cdcfe}.f12ed-hl .f12-s{color:#ce9178}.f12ed-hl .f12-c{color:#6a9955}.f12ed-hl .f12-k{color:#c586c0}",
+    // fullscreen overlay (covers the whole browser viewport)
+    ".f12-fullscreen{position:fixed;top:0;left:0;right:0;bottom:0;width:100vw;height:100vh;z-index:9999;background:#0d1117}",
   ].join("");
   const tagId = "dsh-f12-inspector/styles";
   if (typeof document !== "undefined" && !document.querySelector("style[data-plugin-css=\"" + tagId + "\"]")) {
@@ -348,6 +350,8 @@ window.__ModuleLoader__.load({ id: "dsh-f12-inspector", factory: (require) => {
     const clickLog = react.useRef([]);
     const lastClickRef = react.useRef("");
     const [diag, setDiag] = react.useState("");
+    // fullscreen state: when true the whole inspector covers the browser viewport
+    const [fullscreen, setFullscreen] = react.useState(false);
 
     // file tree state
     const [treeOpen, setTreeOpen] = react.useState(true);
@@ -720,14 +724,19 @@ window.__ModuleLoader__.load({ id: "dsh-f12-inspector", factory: (require) => {
     const activeBtn = mode === 'edit' ? "f12-btn f12-btn-active" : "f12-btn";
     const canEdit = !!(srcRef.current.content);
 
-    return react.createElement("div", { className: "f12-root" },
+    return react.createElement("div", { className: "f12-root" + (fullscreen ? " f12-fullscreen" : "") },
       // header
       react.createElement("div", { className: "f12-hdr" },
         react.createElement("span", { style: { fontSize: 13, fontWeight: 600, color: "#e6edf3" } }, "🔍 F12 检查器"),
         react.createElement("span", { className: "f12-label", style: { marginLeft: 4 } }, "载入页面后点元素即选中"),
         react.createElement("button", {
+          type: "button", title: fullscreen ? "退出全屏（还原）" : "全屏",
+          style: { marginLeft: "auto", height: 26, padding: "0 8px", borderRadius: 6, border: "none", cursor: "pointer", background: "transparent", color: fullscreen ? "#e3b341" : "#8b949e", fontSize: 12 },
+          onClick: () => setFullscreen(!fullscreen),
+        }, fullscreen ? "⤢ 还原" : "⛶ 全屏"),
+        react.createElement("button", {
           type: "button", title: "关闭第三栏",
-          style: { marginLeft: "auto", width: 26, height: 26, borderRadius: 6, border: "none", cursor: "pointer", background: "transparent", color: "#8b949e", fontSize: 16, lineHeight: 1 },
+          style: { width: 26, height: 26, borderRadius: 6, border: "none", cursor: "pointer", background: "transparent", color: "#8b949e", fontSize: 16, lineHeight: 1 },
           onClick: () => { try { closeDetails(); } catch (e) { /* column may be unavailable */ } },
         }, "✕")),
 
