@@ -353,8 +353,10 @@ window.__ModuleLoader__.load({ id: "dsh-f12-inspector", factory: (require) => {
     // fullscreen state: when true the whole inspector covers the browser viewport
     const [fullscreen, setFullscreen] = react.useState(false);
 
-    // file tree state
-    const [treeOpen, setTreeOpen] = react.useState(true);
+    // file tree state (hidden by default so the rendered page dominates)
+    const [treeOpen, setTreeOpen] = react.useState(false);
+    // protocol log state (dev-only, hidden by default; toggle in toolbar)
+    const [showLog, setShowLog] = react.useState(false);
     const [treeMap, setTreeMap] = react.useState({});
     const [expanded, setExpanded] = react.useState({});
     const [treeBusy, setTreeBusy] = react.useState(false);
@@ -770,6 +772,10 @@ window.__ModuleLoader__.load({ id: "dsh-f12-inspector", factory: (require) => {
           className: "f12-btn", onClick: () => setTreeOpen(!treeOpen),
           title: "显示/隐藏工作区文件树",
         }, treeOpen ? "📁 文件▾" : "📁 文件▸"),
+        react.createElement("button", {
+          className: "f12-btn", onClick: () => setShowLog(!showLog),
+          title: "显示/隐藏协议日志（开发者调试用）",
+        }, showLog ? "🕮 协议▾" : "🕮 协议▸"),
         react.createElement("span", { className: "f12-label", style: { marginLeft: "auto" } },
           mode === 'edit' ? "开启中 · Esc 取消" : (loaded ? "未开启" : "")),
         react.createElement("button", { className: "f12-btn", onClick: clearAll, title: "清除选择" }, "✕")),
@@ -835,8 +841,8 @@ window.__ModuleLoader__.load({ id: "dsh-f12-inspector", factory: (require) => {
         ),
       ) : null,
 
-      // protocol log
-      react.createElement("div", { className: "f12-log" },
+      // protocol log (dev-only, hidden by default; toggle via 🕮 协议)
+      showLog ? react.createElement("div", { className: "f12-log" },
         react.createElement("div", { style: { color: "#8b949e", marginBottom: 4, fontSize: 10 } }, "协议日志（inspect）"),
         logs.length === 0
           ? react.createElement("div", {}, "等待操作…")
@@ -845,7 +851,7 @@ window.__ModuleLoader__.load({ id: "dsh-f12-inspector", factory: (require) => {
               react.createElement("span", { style: { color: "#58a6ff" } }, l.type + " "),
               react.createElement("span", {}, l.brief || ""),
             )),
-      ),
+      ) : null,
 
       // status
       react.createElement("div", { className: "f12-status" },
